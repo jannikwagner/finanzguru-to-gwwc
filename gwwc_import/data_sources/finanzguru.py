@@ -65,6 +65,10 @@ class FinanzguruConfig(BaseModel):
     donation_subcategories: list[str] | None = None
     currency: str = "EUR"
     payee_normalization: dict[str, str] = Field(default_factory=dict)
+    # utf-8-sig strips the BOM that Windows / Finanzguru sometimes emits;
+    # falls back transparently for plain UTF-8. Use "latin-1" or "cp1252" if
+    # your export was generated on an older Windows system.
+    encoding: str = "utf-8-sig"
 
 
 class FinanzguruSource:
@@ -75,7 +79,7 @@ class FinanzguruSource:
 
     def load_donations(self, path: Path) -> list[Donation]:
         path = Path(path)
-        df = _read_table(path)
+        df = _read_table(path, encoding=self.config.encoding)
         col_map = _resolve_columns(df.columns)
 
         donations: list[Donation] = []
@@ -139,8 +143,14 @@ class FinanzguruSource:
 # Helpers
 # --------------------------------------------------------------------------- #
 
-def _read_table(path: Path) -> pd.DataFrame:
-    """Read a Finanzguru CSV/XLSX as strings (no implicit type coercion)."""
+def _read_table(path: Path, encoding: str = "utf-8-sig") -> pd.DataFrame:
+    """Read a Finanzguru CSV/XLSX as strings (no implicit type coercion).
+
+    `encoding` defaults to `utf-8-sig` which strips the UTF-8 BOM that
+    Windows and some Finanzguru builds emit, while being transparent for
+    plain UTF-8 files.  Set `FinanzguruConfig.encoding = "latin-1"` for
+    older Windows exports in a Western European code page.
+    """
     if not path.exists():
         raise DataSourceError(f"Finanzguru export not found: {path}")
 
@@ -148,8 +158,8 @@ def _read_table(path: Path) -> pd.DataFrame:
     if suffix in (".xlsx", ".xls"):
         df = pd.read_excel(path, dtype=str, keep_default_na=False)
     elif suffix == ".csv":
-        sep = _sniff_csv_separator(path)
-        df = pd.read_csv(path, sep=sep, dtype=str, keep_default_na=False, encoding="utf-8")
+        sep = _sniff_csv_separator(path, encoding=encoding)
+        df = pd.read_csv(path, sep=sep, dtype=str, keep_default_na=False, encoding=encoding)
     else:
         raise DataSourceError(
             f"Unsupported Finanzguru export extension: {suffix!r}. "
@@ -159,9 +169,9 @@ def _read_table(path: Path) -> pd.DataFrame:
     return df
 
 
-def _sniff_csv_separator(path: Path) -> str:
+def _sniff_csv_separator(path: Path, encoding: str = "utf-8-sig") -> str:
     """Return the most likely CSV separator (German `;` vs. US `,`)."""
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding=encoding) as f:
         head = f.readline()
     return ";" if head.count(";") >= head.count(",") and ";" in head else ","
 

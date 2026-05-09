@@ -52,9 +52,16 @@ python -m gwwc_import \
 
 ## Privacy
 
-This project should be developed against dummy or anonymized export data where possible.
+This project is developed against dummy/anonymized data only. **Never commit a real Finanzguru export.**
 
-Real financial exports can contain highly sensitive personal information, including full transaction history, payee names, categories, dates, and amounts.
+Real financial exports contain highly sensitive personal information: full transaction history, payee names, categories, dates, and amounts.
+
+**Safe handling of your real export file:**
+1. Store it in the `data/` directory at the root of this repo (gitignored entirely) **or** outside the repo completely.
+2. Pass the path via `--input` at runtime — the file never needs to be inside the repo tree.
+3. Do not rename the file to match a pattern you think `.gitignore` will catch — rely on the `data/` directory, not pattern matching.
+
+At `INFO`/`WARNING`/`ERROR` log level the tool refers to donations only by the first 8 characters of their `source_id` hash — no payee names or amounts are logged unless you explicitly pass `--log-level DEBUG`.
 
 ## Notes
 

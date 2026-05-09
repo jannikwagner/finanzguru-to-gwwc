@@ -22,12 +22,13 @@ htmlcov/
 *.gwwc_import_state.json
 *.gwwc_import_session.json
 
-# Real Finanzguru exports — must NEVER be committed
-*finanzguru*export*.csv
-*finanzguru*export*.xlsx
-finanzguru_*.xlsx
-finanzguru_*.csv
-!tests/fixtures/finanzguru_dummy.csv
+# Real financial exports — must NEVER be committed.
+# Keep your actual export files in data/ (gitignored entirely) or outside the repo.
+# Filename-pattern matching is unreliable; data/ is the safe convention.
+data/
+
+# Playwright artefacts
+
 
 # Playwright artefacts
 .playwright/
