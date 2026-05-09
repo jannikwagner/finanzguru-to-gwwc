@@ -1,3 +1,9 @@
+# MCP config (may contain local paths or tokens)
+.mcp.json
+
+# Playwright MCP snapshot artefacts
+.playwright-mcp/
+
 # Python
 __pycache__/
 *.py[cod]
