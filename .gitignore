@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments and secrets
+.env
+.env.local
+
+# Local state and session files (default locations are in $HOME, but never
+# commit them if they happen to land here)
+*.gwwc_import_state.json
+*.gwwc_import_session.json
+
+# Real financial exports — must NEVER be committed.
+# Keep your actual export files in data/ (gitignored entirely) or outside the repo.
+# Filename-pattern matching is unreliable; data/ is the safe convention.
+data/
+
+# Playwright artefacts
+
+
+# Playwright artefacts
+.playwright/
+playwright-report/
+test-results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store

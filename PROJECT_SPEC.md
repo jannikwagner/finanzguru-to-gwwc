@@ -125,12 +125,13 @@ Defined in `gwwc_import/models.py` using Pydantic v2.
 ```python
 from pydantic import BaseModel
 from datetime import date
+from decimal import Decimal
 
 class Donation(BaseModel):
     source_system: str          # e.g. "finanzguru"
-    source_id: str              # Unique key from the source (e.g. row hash or transaction ID)
+    source_id: str              # Unique, deterministic key from the source
     date: date                  # Booking date of the transaction
-    amount: float               # Absolute positive value in source currency
+    amount: Decimal             # Absolute positive value in source currency
     currency: str               # ISO 4217, e.g. "EUR"
     recipient_name: str         # Payee / charity name
     description: str            # Memo / Verwendungszweck
@@ -138,6 +139,9 @@ class Donation(BaseModel):
     category: str | None        # Original category from source (optional)
     notes: str | None           # Any additional free-text notes (optional)
 ```
+
+`amount` is `Decimal` (not `float`) so euro/cent values round-trip without
+binary-float drift before being written into the EA.org form.
 
 ### `SubmissionState`
 
@@ -190,12 +194,28 @@ Defined in `gwwc_import/data_sources/finanzguru.py`.
 | `Unterkategorie` | Subcategory |
 | `Vertrag` | Contract flag (present / non-empty = recurring) |
 
+The exact column headers vary across export versions and locales (e.g.
+`Beguenstigter/Auftraggeber` vs `Begünstigter/Zahlungspflichtiger`,
+`Buchungstag` vs `Datum`). The parser keeps an explicit alias map per
+logical field and raises a clear error listing the columns it actually
+saw if no candidate matches, rather than silently producing empty fields.
+
+The German Finanzguru CSV export typically uses `;` as the column
+separator and `,` as the decimal separator. The parser auto-detects
+this (via `csv.Sniffer` plus a fallback) and also accepts the standard
+`,`-separated / `.`-decimal form for `.xlsx` exports converted to CSV.
+
 #### Filtering logic
 
 1. Filter rows where `Hauptkategorie` matches any value in the configured `donation_categories` list (default: `["Spenden"]`).
 2. Optionally also check `Unterkategorie` for finer filtering.
 3. Treat any row with a non-empty `Vertrag` field as `is_recurring = True`.
-4. Derive `source_id` as: `sha256(Buchungstag + Betrag + Beguenstigter + Verwendungszweck)`.
+4. Derive `source_id` as a deterministic SHA-256 hash over a stable
+   tuple of fields plus a per-file ordinal:
+   `sha256(Buchungstag + Betrag + Beguenstigter + Verwendungszweck + ordinal)`.
+   The ordinal is the row's position among rows that would otherwise hash
+   identically within the same export, so two genuinely-distinct donations
+   with the same date, amount, payee and memo still get distinct IDs.
 
 #### Configuration
 
@@ -350,6 +370,7 @@ A `.env.example` file is committed to the repository. The actual `.env` file is 
 - **Session state** is stored in a local JSON file outside the repo. It contains browser cookies — treat it like a password.
 - **Transaction data** never leaves the machine except to EA.org during form submission. No telemetry. No analytics. No third-party services.
 - **State file** records only `source_id` hashes, timestamps, and submission outcomes — not amounts or payee names.
+- **Logging** uses a small redaction helper: error and info logs reference donations by the first 8 chars of `source_id`, never by full payee name or raw amount. Full payee/amount appear only at `DEBUG` level and only when the user has explicitly opted in via `--log-level DEBUG`.
 - **Development** should be done against dummy/anonymized data. Real exports should never be committed to the repository.
 
 ---

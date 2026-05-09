@@ -1,0 +1,12 @@
+Name Referenzkonto;Buchungstag;Beguenstigter/Auftraggeber;Verwendungszweck;Betrag;Hauptkategorie;Unterkategorie;Vertrag
+Girokonto;05.01.2026;ACME GmbH;Gehalt Januar 2026;3200,00;Einkommen;Gehalt;
+Girokonto;06.01.2026;REWE SAGT DANKE;EC 06.01. 18:42;-42,17;Lebensmittel;Supermarkt;
+Girokonto;07.01.2026;Against Malaria Foundation;Spende AMF Januar;-50,00;Spenden;Internationale Hilfe;Monatsspende AMF
+Girokonto;08.01.2026;GiveDirectly;Direct cash transfer;-25,00;Spenden;Internationale Hilfe;Monatliche Spende GiveDirectly
+Girokonto;10.01.2026;Cafe Central;Cappuccino & Croissant;-7,80;Restaurants;Cafe;
+Girokonto;15.01.2026;GiveWell Inc;Top Charities Fund Q1;-200,00;Spenden;Internationale Hilfe;
+Girokonto;06.02.2026;REWE SAGT DANKE;EC 06.02. 19:11;-38,42;Lebensmittel;Supermarkt;
+Girokonto;07.02.2026;Against Malaria Foundation;Spende AMF Februar;-50,00;Spenden;Internationale Hilfe;Monatsspende AMF
+Girokonto;08.02.2026;GiveDirectly;Direct cash transfer;-25,00;Spenden;Internationale Hilfe;Monatliche Spende GiveDirectly
+Girokonto;20.02.2026;Wikimedia Foerderverein;Spende Wikipedia;-10,00;Spenden;Bildung;
+Girokonto;20.02.2026;Wikimedia Foerderverein;Spende Wikipedia;-10,00;Spenden;Bildung;
