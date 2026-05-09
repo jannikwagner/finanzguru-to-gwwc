@@ -90,6 +90,15 @@ class FinanzguruSource:
     def __init__(self, config: FinanzguruConfig | None = None) -> None:
         self.config = config or FinanzguruConfig()
 
+    @classmethod
+    def from_env(cls) -> FinanzguruSource:
+        """Build a fully-configured source from environment variables.
+
+        Used by `cli._build_source` so the CLI doesn't need per-source
+        knowledge — every registered source just exposes `from_env()`.
+        """
+        return cls(FinanzguruConfig.from_env())
+
     def load_donations(self, path: Path) -> list[Donation]:
         path = Path(path)
         df = _read_table(path, encoding=self.config.encoding)

@@ -17,10 +17,12 @@ from gwwc_import.cli import (
     _build_arg_parser,
     _build_source,
     _JSONEncoder,
+    _log_deferred_flags,
     _parse_date_arg,
     run,
 )
-from gwwc_import.data_sources.finanzguru import FinanzguruSource
+from gwwc_import.data_sources.base import DonationSource
+from gwwc_import.data_sources.finanzguru import FinanzguruConfig, FinanzguruSource
 
 FIXTURE = Path(__file__).parent / "fixtures" / "finanzguru_dummy.csv"
 
@@ -59,8 +61,41 @@ def test_sources_registry_contains_finanzguru() -> None:
     assert SOURCES["finanzguru"] is FinanzguruSource
 
 
+def test_every_registered_source_exposes_from_env() -> None:
+    """`_build_source` calls `cls.from_env()` for every registered source."""
+    for name, cls in SOURCES.items():
+        assert hasattr(cls, "from_env"), f"{name} must expose a from_env() classmethod"
+        assert callable(cls.from_env)
+
+
 def test_build_source_returns_finanzguru_instance() -> None:
-    assert isinstance(_build_source("finanzguru"), FinanzguruSource)
+    source = _build_source("finanzguru")
+    assert isinstance(source, FinanzguruSource)
+    # Must satisfy the protocol so `_build_source`'s return type holds.
+    assert isinstance(source, DonationSource)
+
+
+def test_build_source_unknown_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown source"):
+        _build_source("not-a-real-source")
+
+
+def test_finanzguru_source_from_env_uses_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("FINANZGURU_DONATION_CATEGORIES", "Spenden,Wohltätigkeit")
+    monkeypatch.setenv("FINANZGURU_CURRENCY", "USD")
+    source = FinanzguruSource.from_env()
+    assert source.config.donation_categories == ["Spenden", "Wohltätigkeit"]
+    assert source.config.currency == "USD"
+
+
+def test_finanzguru_config_from_env_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("FINANZGURU_DONATION_CATEGORIES", raising=False)
+    monkeypatch.delenv("FINANZGURU_CURRENCY", raising=False)
+    monkeypatch.delenv("FINANZGURU_ENCODING", raising=False)
+    cfg = FinanzguruConfig.from_env()
+    assert cfg.donation_categories == ["Spenden"]
+    assert cfg.currency == "EUR"
+    assert cfg.encoding == "utf-8-sig"
 
 
 def test_arg_parser_requires_input_and_source() -> None:
@@ -345,6 +380,38 @@ def test_run_live_mode_raises_not_implemented() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Deferred-flag debug logging
+# --------------------------------------------------------------------------- #
+
+def test_log_deferred_flags_force_resubmit(caplog) -> None:
+    import logging
+    log = logging.getLogger("test")
+    with caplog.at_level(logging.DEBUG, logger="test"):
+        _log_deferred_flags(_make_args(force_resubmit=True), log)
+    assert any("--force-resubmit" in r.message for r in caplog.records)
+
+
+def test_log_deferred_flags_custom_state_file(caplog) -> None:
+    import logging
+    log = logging.getLogger("test")
+    with caplog.at_level(logging.DEBUG, logger="test"):
+        _log_deferred_flags(_make_args(state_file="/tmp/custom.json"), log)
+    assert any("--state-file" in r.message for r in caplog.records)
+
+
+def test_log_deferred_flags_silent_when_defaults(caplog) -> None:
+    import logging
+    log = logging.getLogger("test")
+    with caplog.at_level(logging.DEBUG, logger="test"):
+        _log_deferred_flags(_make_args(), log)
+    deferred_records = [r for r in caplog.records
+                        if any(flag in r.message
+                               for flag in ("--force-resubmit", "--state-file",
+                                            "--session-file", "--no-headless"))]
+    assert deferred_records == []
+
+
+# --------------------------------------------------------------------------- #
 # JSON encoder
 # --------------------------------------------------------------------------- #
 
@@ -377,7 +444,7 @@ def test_python_m_gwwc_import_dry_run_exits_zero() -> None:
     assert len(payload) == 7
 
 
-def test_python_m_gwwc_import_live_mode_exits_nonzero() -> None:
+def test_python_m_gwwc_import_live_mode_exits_one() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "gwwc_import",
          "--input", str(FIXTURE), "--source", "finanzguru",
@@ -385,8 +452,20 @@ def test_python_m_gwwc_import_live_mode_exits_nonzero() -> None:
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0
+    # Exit code 1 (general error), not 2 (argparse usage error).
+    assert result.returncode == 1
     assert "Phase 3/4" in result.stderr
+
+
+def test_python_m_gwwc_import_invalid_args_exits_two() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "gwwc_import",
+         "--input", str(FIXTURE), "--source", "not-a-real-source"],
+        capture_output=True,
+        text=True,
+    )
+    # argparse uses 2 for usage errors — distinct from our runtime errors (1).
+    assert result.returncode == 2
 
 
 def test_python_m_gwwc_import_no_args_exits_nonzero() -> None:

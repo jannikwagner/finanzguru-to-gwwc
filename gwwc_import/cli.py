@@ -22,16 +22,23 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from gwwc_import.data_sources.finanzguru import FinanzguruConfig, FinanzguruSource
+from gwwc_import.data_sources.base import DonationSource
+from gwwc_import.data_sources.finanzguru import FinanzguruSource
 from gwwc_import.privacy import redacted_label
 
 if TYPE_CHECKING:
     from gwwc_import.models import Donation
 
-# Registry of supported data sources.  New sources only need to appear here.
-SOURCES: dict[str, type] = {
+# Registry of supported data sources.  New sources only need to appear here
+# and must expose a `from_env()` classmethod.
+SOURCES: dict[str, type[DonationSource]] = {
     "finanzguru": FinanzguruSource,
 }
+
+# Default values for flags that are accepted by argparse but not yet acted on
+# (Phase 5 / Phase 3-4).  Used to detect non-default user input for DEBUG logs.
+_DEFAULT_STATE_FILE = "~/.gwwc_import_state.json"
+_DEFAULT_SESSION_FILE = "~/.gwwc_import_session.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -46,11 +53,10 @@ def main() -> None:
     _setup_logging(args.log_level)
     try:
         run(args)
-    except NotImplementedError as exc:
-        logging.error("%s", exc)
-        sys.exit(2)
     except Exception as exc:
-        logging.error("Fatal error: %s", exc)
+        # NotImplementedError and any other failure both exit with 1 — exit code
+        # 2 is reserved by argparse for usage errors (invalid arguments).
+        logging.error("%s", exc)
         sys.exit(1)
 
 
@@ -60,6 +66,7 @@ def run(args: argparse.Namespace) -> list[Donation]:
     Returns the list of donations that were (or would be) processed.
     """
     log = logging.getLogger(__name__)
+    _log_deferred_flags(args, log)
 
     from_date = _parse_date_arg(args.from_date, "--from-date")
     to_date = _parse_date_arg(args.to_date, "--to-date")
@@ -128,10 +135,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--force-resubmit", action="store_true",
                    help="Re-submit donations already recorded in the state file (Phase 5)")
     p.add_argument("--state-file", metavar="PATH",
-                   default="~/.gwwc_import_state.json",
+                   default=_DEFAULT_STATE_FILE,
                    help="State file tracking already-submitted donations")
     p.add_argument("--session-file", metavar="PATH",
-                   default="~/.gwwc_import_session.json",
+                   default=_DEFAULT_SESSION_FILE,
                    help="Playwright session/cookie persistence file (Phase 3)")
     p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                    default="INFO", help="Logging verbosity")
@@ -196,10 +203,28 @@ class _JSONEncoder(json.JSONEncoder):
 # Helpers
 # --------------------------------------------------------------------------- #
 
-def _build_source(source_key: str) -> object:
-    if source_key == "finanzguru":
-        return FinanzguruSource(FinanzguruConfig.from_env())
-    raise ValueError(f"Unknown source: {source_key!r}")
+def _build_source(source_key: str) -> DonationSource:
+    """Look up a source class in `SOURCES` and build it from the environment.
+
+    Every registered source class must expose a `from_env()` classmethod.
+    """
+    cls = SOURCES.get(source_key)
+    if cls is None:
+        # Unreachable in normal flow — argparse `choices` already validates this.
+        raise ValueError(f"Unknown source: {source_key!r}")
+    return cls.from_env()
+
+
+def _log_deferred_flags(args: argparse.Namespace, log: logging.Logger) -> None:
+    """Emit a DEBUG line per accepted-but-not-yet-active flag."""
+    if args.force_resubmit:
+        log.debug("--force-resubmit accepted but not active yet (Phase 5).")
+    if args.state_file != _DEFAULT_STATE_FILE:
+        log.debug("--state-file accepted but not active yet (Phase 5).")
+    if args.session_file != _DEFAULT_SESSION_FILE:
+        log.debug("--session-file accepted but not active yet (Phase 3).")
+    if args.headless is False:
+        log.debug("--no-headless accepted but not active yet (Phase 3).")
 
 
 def _parse_date_arg(value: str | None, flag: str) -> date | None:
