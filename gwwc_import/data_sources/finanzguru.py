@@ -70,12 +70,34 @@ class FinanzguruConfig(BaseModel):
     # your export was generated on an older Windows system.
     encoding: str = "utf-8-sig"
 
+    @classmethod
+    def from_env(cls) -> FinanzguruConfig:
+        """Build a config from environment variables (call after dotenv.load_dotenv)."""
+        import os
+
+        cats_raw = os.environ.get("FINANZGURU_DONATION_CATEGORIES", "Spenden")
+        categories = [c.strip() for c in cats_raw.split(",") if c.strip()]
+        return cls(
+            donation_categories=categories,
+            currency=os.environ.get("FINANZGURU_CURRENCY", "EUR"),
+            encoding=os.environ.get("FINANZGURU_ENCODING", "utf-8-sig"),
+        )
+
 
 class FinanzguruSource:
     """Concrete `DonationSource` for Finanzguru exports."""
 
     def __init__(self, config: FinanzguruConfig | None = None) -> None:
         self.config = config or FinanzguruConfig()
+
+    @classmethod
+    def from_env(cls) -> FinanzguruSource:
+        """Build a fully-configured source from environment variables.
+
+        Used by `cli._build_source` so the CLI doesn't need per-source
+        knowledge — every registered source just exposes `from_env()`.
+        """
+        return cls(FinanzguruConfig.from_env())
 
     def load_donations(self, path: Path) -> list[Donation]:
         path = Path(path)

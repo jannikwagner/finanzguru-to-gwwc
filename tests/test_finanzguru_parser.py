@@ -33,6 +33,17 @@ def test_implements_donation_source_protocol() -> None:
     assert isinstance(FinanzguruSource(), DonationSource)
 
 
+def test_xlsx_export_produces_same_donations_as_csv(xlsx_fixture: Path) -> None:
+    """Round-trip the dummy fixture through XLSX to exercise pd.read_excel."""
+    csv_donations = FinanzguruSource().load_donations(FIXTURE)
+    xlsx_donations = FinanzguruSource().load_donations(xlsx_fixture)
+    assert len(xlsx_donations) == len(csv_donations)
+    # source_id is computed from raw cell strings; XLSX should produce the
+    # same hashes as the CSV path for the same payload.
+    assert [d.source_id for d in xlsx_donations] == [d.source_id for d in csv_donations]
+    assert [d.amount for d in xlsx_donations] == [d.amount for d in csv_donations]
+
+
 def test_only_donation_rows_are_kept(donations: list[Donation]) -> None:
     # Fixture has 11 rows total: 4 non-donations (1 salary, 2 grocery, 1 cafe)
     # and 7 donations.
