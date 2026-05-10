@@ -19,6 +19,7 @@ from playwright.sync_api import Locator, Page, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from gwwc_import.models import Donation
+from gwwc_import.privacy import redacted_label
 
 _DONATIONS_URL = "https://www.givingwhatwecan.org/dashboard/pledge/donations"
 _TIMEOUT = 10_000  # ms — used for form rendering and Save button
@@ -59,9 +60,9 @@ class DonationSubmitter:
         return [self.submit(d) for d in donations]
 
     def submit(self, donation: Donation) -> SubmissionResult:
-        log.info(
-            "%s: %s %s on %s to %r",
-            "Dry-run" if self.dry_run else "Submitting",
+        log.info("%s %s", "Dry-run:" if self.dry_run else "Submitting:", redacted_label(donation))
+        log.debug(
+            "Full record: %s %s on %s to %r",
             donation.amount,
             donation.currency,
             donation.date,
@@ -106,7 +107,7 @@ class DonationSubmitter:
         full page reload that would restart async data fetching and push button
         visibility past the timeout window.
         """
-        if _DONATIONS_URL not in self.page.url or "?" in self.page.url:
+        if _DONATIONS_URL not in self.page.url or "report=true" in self.page.url:
             self.page.goto(_DONATIONS_URL)
 
         # Cookie consent can reappear on navigation in a fresh browser context.
@@ -173,11 +174,15 @@ class DonationSubmitter:
             create_option.click()
             return
 
-        # Last resort: pick the first suggestion rather than failing hard.
+        # Last resort: pick the first suggestion if it contains a substring of the target name.
         if options:
-            log.warning("No exact or create match for %r — picking first result.", name)
-            options[0].click()
-            return
+            first_text = options[0].inner_text().strip()
+            if any(word.lower() in first_text.lower() for word in name.split() if len(word) > 3):
+                log.warning(
+                    "No exact or create match for %r — picking first result %r.", name, first_text
+                )
+                options[0].click()
+                return
 
         raise FormStructureError(f"No dropdown options found for recipient: {name!r}")
 
@@ -191,7 +196,13 @@ class DonationSubmitter:
         except PlaywrightTimeoutError as exc:
             raise FormStructureError(f"Currency dropdown did not open for {currency!r}.") from exc
 
-        listbox.get_by_role("option").first.click()
+        options = listbox.get_by_role("option").all()
+        for option in options:
+            if option.inner_text().strip().upper() == currency.upper():
+                option.click()
+                return
+
+        raise FormStructureError(f"No exact currency match found for {currency!r}.")
 
     def _fill_amount(self, dialog: Locator, amount: Decimal) -> None:
         self.page.get_by_role("textbox", name="Amount").fill(str(amount))
