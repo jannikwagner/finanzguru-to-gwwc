@@ -22,7 +22,17 @@ import logging
 import os
 from pathlib import Path
 
-from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expect, sync_playwright
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    Page,
+    Playwright,
+    expect,
+    sync_playwright,
+)
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 _DONATIONS_URL = "https://www.givingwhatwecan.org/dashboard/pledge/donations"
 _DEFAULT_SESSION_FILE = Path("~/.gwwc_import_session.json")
@@ -116,8 +126,8 @@ class GWWCSession:
         try:
             page.get_by_role("button", name="Accept all").click(timeout=4_000)
             log.debug("Cookie consent accepted.")
-        except Exception:
-            pass  # already accepted, or not present
+        except PlaywrightTimeoutError:
+            pass  # consent banner not present or already accepted
 
         if page.get_by_role("dialog").filter(has_text="Welcome back").is_visible():
             log.info("Session unauthenticated — logging in.")
@@ -164,7 +174,8 @@ class GWWCSession:
         return self._page
 
     def _save_session(self) -> None:
-        assert self._context is not None
+        if self._context is None:
+            raise SessionError("Cannot save session: browser context is not open.")
         storage = self._context.storage_state()
         self.session_file.parent.mkdir(parents=True, exist_ok=True)
         self.session_file.write_text(json.dumps(storage))
