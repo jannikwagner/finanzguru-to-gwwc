@@ -24,6 +24,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "finanzguru_dummy.csv"
 # End-to-end against the dummy fixture
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture(scope="module")
 def donations() -> list[Donation]:
     return FinanzguruSource().load_donations(FIXTURE)
@@ -86,7 +87,8 @@ def test_currency_is_eur_by_default(donations: list[Donation]) -> None:
 
 def test_dates_parse_german_format(donations: list[Donation]) -> None:
     amf_jan = next(
-        d for d in donations
+        d
+        for d in donations
         if d.recipient_name == "Against Malaria Foundation" and d.date.month == 1
     )
     assert amf_jan.date == date(2026, 1, 7)
@@ -115,10 +117,9 @@ def test_duplicate_looking_rows_get_distinct_source_ids(donations: list[Donation
 # Configuration and normalization
 # --------------------------------------------------------------------------- #
 
+
 def test_payee_normalization_applies() -> None:
-    config = FinanzguruConfig(
-        payee_normalization={"GiveWell Inc": "GiveWell"}
-    )
+    config = FinanzguruConfig(payee_normalization={"GiveWell Inc": "GiveWell"})
     donations = FinanzguruSource(config).load_donations(FIXTURE)
     assert any(d.recipient_name == "GiveWell" for d in donations)
     assert not any(d.recipient_name == "GiveWell Inc" for d in donations)
@@ -139,6 +140,7 @@ def test_changing_donation_categories_drops_all_donations() -> None:
 # --------------------------------------------------------------------------- #
 # Tolerance to alternate column headers
 # --------------------------------------------------------------------------- #
+
 
 def test_accepts_umlaut_payee_column(tmp_path: Path) -> None:
     csv = tmp_path / "umlaut.csv"
@@ -166,6 +168,7 @@ def test_missing_required_column_raises_clear_error(tmp_path: Path) -> None:
 # Low-level parsers
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -174,7 +177,7 @@ def test_missing_required_column_raises_clear_error(tmp_path: Path) -> None:
         ("3.200,00", Decimal("3200.00")),
         ("3,200.00", Decimal("3200.00")),
         ("  -7,80 ", Decimal("-7.80")),
-        ("−0,01", Decimal("-0.01")),  # unicode minus
+        ("−0,01", Decimal("-0.01")),  # noqa: RUF001  # unicode minus
         ("100", Decimal("100")),
     ],
 )

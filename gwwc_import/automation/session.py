@@ -148,9 +148,7 @@ class GWWCSession:
     def _login(self, page: Page) -> None:
         """Fill and submit the email/password form."""
         if not self.email or not self.password:
-            raise SessionError(
-                "Cannot login: GWWC_EMAIL and GWWC_PASSWORD must be set."
-            )
+            raise SessionError("Cannot login: GWWC_EMAIL and GWWC_PASSWORD must be set.")
         page.get_by_role("textbox", name="Email").fill(self.email)
         page.get_by_role("textbox", name="Password").fill(self.password)
         # Button starts disabled; becomes enabled once both fields have content.
@@ -196,11 +194,7 @@ class GWWCSession:
         email = os.environ.get("GWWC_EMAIL", "")
         password = os.environ.get("GWWC_PASSWORD", "")
         if not email or not password:
-            raise SessionError(
-                "GWWC_EMAIL and GWWC_PASSWORD must be set (e.g. in a .env file)."
-            )
-        session_file = Path(
-            os.environ.get("GWWC_SESSION_FILE", str(_DEFAULT_SESSION_FILE))
-        )
+            raise SessionError("GWWC_EMAIL and GWWC_PASSWORD must be set (e.g. in a .env file).")
+        session_file = Path(os.environ.get("GWWC_SESSION_FILE", str(_DEFAULT_SESSION_FILE)))
         headless = os.environ.get("GWWC_HEADLESS", "true").lower() != "false"
         return cls(email=email, password=password, session_file=session_file, headless=headless)

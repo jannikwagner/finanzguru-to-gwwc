@@ -26,6 +26,7 @@ from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -107,7 +108,7 @@ class FinanzguruSource:
         donations: list[Donation] = []
         seen_keys: dict[tuple[str, str, str, str], int] = {}
 
-        for raw in df.to_dict(orient="records"):
+        for raw in cast(list[dict[str, object]], df.to_dict(orient="records")):
             row = {logical: _cell(raw, col) for logical, col in col_map.items()}
 
             if not self._is_donation_row(row):
@@ -165,6 +166,7 @@ class FinanzguruSource:
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def _read_table(path: Path, encoding: str = "utf-8-sig") -> pd.DataFrame:
     """Read a Finanzguru CSV/XLSX as strings (no implicit type coercion).
 
@@ -184,8 +186,7 @@ def _read_table(path: Path, encoding: str = "utf-8-sig") -> pd.DataFrame:
         df = pd.read_csv(path, sep=sep, dtype=str, keep_default_na=False, encoding=encoding)
     else:
         raise DataSourceError(
-            f"Unsupported Finanzguru export extension: {suffix!r}. "
-            "Expected .csv, .xlsx, or .xls."
+            f"Unsupported Finanzguru export extension: {suffix!r}. Expected .csv, .xlsx, or .xls."
         )
     df.columns = [str(c).strip() for c in df.columns]
     return df
@@ -247,7 +248,7 @@ def _parse_amount(raw: str) -> Decimal:
     """
     if raw is None:
         raise ValueError("empty amount")
-    s = str(raw).strip().replace(" ", "").replace("−", "-")
+    s = str(raw).strip().replace(" ", "").replace("−", "-")  # noqa: RUF001
     if not s:
         raise ValueError("empty amount")
     last_comma = s.rfind(",")

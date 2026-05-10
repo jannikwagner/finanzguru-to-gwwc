@@ -189,9 +189,7 @@ class DonationSubmitter:
         try:
             listbox.wait_for(state="visible", timeout=5_000)
         except PlaywrightTimeoutError as exc:
-            raise FormStructureError(
-                f"Currency dropdown did not open for {currency!r}."
-            ) from exc
+            raise FormStructureError(f"Currency dropdown did not open for {currency!r}.") from exc
 
         listbox.get_by_role("option").first.click()
 

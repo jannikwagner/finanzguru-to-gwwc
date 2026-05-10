@@ -16,5 +16,7 @@ class DataSourceError(Exception):
 class DonationSource(Protocol):
     """Loads and normalizes donations from a single export file."""
 
-    def load_donations(self, path: Path) -> list[Donation]:
-        ...
+    def load_donations(self, path: Path) -> list[Donation]: ...
+
+    @classmethod
+    def from_env(cls) -> DonationSource: ...
