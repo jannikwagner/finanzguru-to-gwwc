@@ -45,6 +45,7 @@ _DEFAULT_SESSION_FILE = "~/.gwwc_import_session.json"
 # Entry points
 # --------------------------------------------------------------------------- #
 
+
 def main() -> None:
     """Installed entry-point and `python -m gwwc_import` target."""
     load_dotenv()
@@ -100,6 +101,7 @@ def run(args: argparse.Namespace) -> list[Donation]:
 # Argument parser
 # --------------------------------------------------------------------------- #
 
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="gwwc_import",
@@ -110,38 +112,75 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    p.add_argument("--input", required=True, metavar="FILE",
-                   help="Path to the export file (.csv or .xlsx)")
-    p.add_argument("--source", required=True, choices=list(SOURCES),
-                   help="Data source type")
-    p.add_argument("--mode", choices=["dry-run", "live"], default="dry-run",
-                   help="dry-run prints what would be submitted; live submits")
-    p.add_argument("--headless", default=True,
-                   action=argparse.BooleanOptionalAction,
-                   help="Run browser headlessly (Phase 3/4 only)")
-    p.add_argument("--limit", type=int, metavar="N", default=None,
-                   help="Only process the first N donations after all other filters")
-    p.add_argument("--from-date", metavar="YYYY-MM-DD", default=None,
-                   help="Only include donations on or after this date")
-    p.add_argument("--to-date", metavar="YYYY-MM-DD", default=None,
-                   help="Only include donations on or before this date")
+    p.add_argument(
+        "--input", required=True, metavar="FILE", help="Path to the export file (.csv or .xlsx)"
+    )
+    p.add_argument("--source", required=True, choices=list(SOURCES), help="Data source type")
+    p.add_argument(
+        "--mode",
+        choices=["dry-run", "live"],
+        default="dry-run",
+        help="dry-run prints what would be submitted; live submits",
+    )
+    p.add_argument(
+        "--headless",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Run browser headlessly (Phase 3/4 only)",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        default=None,
+        help="Only process the first N donations after all other filters",
+    )
+    p.add_argument(
+        "--from-date",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="Only include donations on or after this date",
+    )
+    p.add_argument(
+        "--to-date",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="Only include donations on or before this date",
+    )
 
     recurrence = p.add_mutually_exclusive_group()
-    recurrence.add_argument("--only-recurring", action="store_true",
-                            help="Only process recurring (Vertrag-based) donations")
-    recurrence.add_argument("--only-onetime", action="store_true",
-                            help="Only process one-time donations")
+    recurrence.add_argument(
+        "--only-recurring",
+        action="store_true",
+        help="Only process recurring (Vertrag-based) donations",
+    )
+    recurrence.add_argument(
+        "--only-onetime", action="store_true", help="Only process one-time donations"
+    )
 
-    p.add_argument("--force-resubmit", action="store_true",
-                   help="Re-submit donations already recorded in the state file (Phase 5)")
-    p.add_argument("--state-file", metavar="PATH",
-                   default=_DEFAULT_STATE_FILE,
-                   help="State file tracking already-submitted donations")
-    p.add_argument("--session-file", metavar="PATH",
-                   default=_DEFAULT_SESSION_FILE,
-                   help="Playwright session/cookie persistence file (Phase 3)")
-    p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                   default="INFO", help="Logging verbosity")
+    p.add_argument(
+        "--force-resubmit",
+        action="store_true",
+        help="Re-submit donations already recorded in the state file (Phase 5)",
+    )
+    p.add_argument(
+        "--state-file",
+        metavar="PATH",
+        default=_DEFAULT_STATE_FILE,
+        help="State file tracking already-submitted donations",
+    )
+    p.add_argument(
+        "--session-file",
+        metavar="PATH",
+        default=_DEFAULT_SESSION_FILE,
+        help="Playwright session/cookie persistence file (Phase 3)",
+    )
+    p.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging verbosity",
+    )
 
     return p
 
@@ -149,6 +188,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 # --------------------------------------------------------------------------- #
 # Filtering
 # --------------------------------------------------------------------------- #
+
 
 def _apply_filters(
     donations: list[Donation],
@@ -176,6 +216,7 @@ def _apply_filters(
 # Dry-run output
 # --------------------------------------------------------------------------- #
 
+
 def _dry_run_output(donations: list[Donation], log: logging.Logger) -> None:
     """Log a privacy-safe summary and print a full JSON array to stdout."""
     for d in donations:
@@ -202,6 +243,7 @@ class _JSONEncoder(json.JSONEncoder):
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
 
 def _build_source(source_key: str) -> DonationSource:
     """Look up a source class in `SOURCES` and build it from the environment.

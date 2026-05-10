@@ -31,6 +31,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "finanzguru_dummy.csv"
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def _make_args(**overrides) -> argparse.Namespace:
     """Return a minimal valid Namespace, with optional field overrides."""
     defaults = dict(
@@ -55,6 +56,7 @@ def _make_args(**overrides) -> argparse.Namespace:
 # --------------------------------------------------------------------------- #
 # Argument parser
 # --------------------------------------------------------------------------- #
+
 
 def test_sources_registry_contains_finanzguru() -> None:
     assert "finanzguru" in SOURCES
@@ -122,10 +124,16 @@ def test_arg_parser_defaults() -> None:
 def test_arg_parser_only_recurring_and_onetime_are_mutually_exclusive() -> None:
     p = _build_arg_parser()
     with pytest.raises(SystemExit):
-        p.parse_args([
-            "--input", "foo.csv", "--source", "finanzguru",
-            "--only-recurring", "--only-onetime",
-        ])
+        p.parse_args(
+            [
+                "--input",
+                "foo.csv",
+                "--source",
+                "finanzguru",
+                "--only-recurring",
+                "--only-onetime",
+            ]
+        )
 
 
 def test_arg_parser_no_headless_flag() -> None:
@@ -136,18 +144,29 @@ def test_arg_parser_no_headless_flag() -> None:
 
 def test_arg_parser_all_flags_accepted() -> None:
     p = _build_arg_parser()
-    args = p.parse_args([
-        "--input", "export.csv",
-        "--source", "finanzguru",
-        "--mode", "dry-run",
-        "--limit", "5",
-        "--from-date", "2026-01-01",
-        "--to-date", "2026-12-31",
-        "--only-recurring",
-        "--state-file", "/tmp/state.json",
-        "--session-file", "/tmp/session.json",
-        "--log-level", "DEBUG",
-    ])
+    args = p.parse_args(
+        [
+            "--input",
+            "export.csv",
+            "--source",
+            "finanzguru",
+            "--mode",
+            "dry-run",
+            "--limit",
+            "5",
+            "--from-date",
+            "2026-01-01",
+            "--to-date",
+            "2026-12-31",
+            "--only-recurring",
+            "--state-file",
+            "/tmp/state.json",
+            "--session-file",
+            "/tmp/session.json",
+            "--log-level",
+            "DEBUG",
+        ]
+    )
     assert args.limit == 5
     assert args.from_date == "2026-01-01"
     assert args.to_date == "2026-12-31"
@@ -157,6 +176,7 @@ def test_arg_parser_all_flags_accepted() -> None:
 # --------------------------------------------------------------------------- #
 # Date arg parsing
 # --------------------------------------------------------------------------- #
+
 
 def test_parse_date_arg_none_returns_none() -> None:
     assert _parse_date_arg(None, "--from-date") is None
@@ -175,6 +195,7 @@ def test_parse_date_arg_invalid_raises_system_exit() -> None:
 # --------------------------------------------------------------------------- #
 # Filtering
 # --------------------------------------------------------------------------- #
+
 
 @pytest.fixture(scope="module")
 def all_donations():
@@ -303,6 +324,7 @@ def test_empty_result_on_no_match(all_donations) -> None:
 # run() integration — dry-run JSON output
 # --------------------------------------------------------------------------- #
 
+
 def test_run_dryrun_returns_donations(capsys) -> None:
     donations = run(_make_args())
     assert len(donations) == 7
@@ -322,8 +344,14 @@ def test_run_dryrun_json_fields(capsys) -> None:
     payload = json.loads(captured.out)
     record = payload[0]
     assert set(record.keys()) >= {
-        "source_system", "source_id", "date", "amount",
-        "currency", "recipient_name", "description", "is_recurring",
+        "source_system",
+        "source_id",
+        "date",
+        "amount",
+        "currency",
+        "recipient_name",
+        "description",
+        "is_recurring",
     }
     assert record["source_system"] == "finanzguru"
     assert record["currency"] == "EUR"
@@ -383,8 +411,10 @@ def test_run_live_mode_raises_not_implemented() -> None:
 # Deferred-flag debug logging
 # --------------------------------------------------------------------------- #
 
+
 def test_log_deferred_flags_force_resubmit(caplog) -> None:
     import logging
+
     log = logging.getLogger("test")
     with caplog.at_level(logging.DEBUG, logger="test"):
         _log_deferred_flags(_make_args(force_resubmit=True), log)
@@ -393,6 +423,7 @@ def test_log_deferred_flags_force_resubmit(caplog) -> None:
 
 def test_log_deferred_flags_custom_state_file(caplog) -> None:
     import logging
+
     log = logging.getLogger("test")
     with caplog.at_level(logging.DEBUG, logger="test"):
         _log_deferred_flags(_make_args(state_file="/tmp/custom.json"), log)
@@ -401,13 +432,18 @@ def test_log_deferred_flags_custom_state_file(caplog) -> None:
 
 def test_log_deferred_flags_silent_when_defaults(caplog) -> None:
     import logging
+
     log = logging.getLogger("test")
     with caplog.at_level(logging.DEBUG, logger="test"):
         _log_deferred_flags(_make_args(), log)
-    deferred_records = [r for r in caplog.records
-                        if any(flag in r.message
-                               for flag in ("--force-resubmit", "--state-file",
-                                            "--session-file", "--no-headless"))]
+    deferred_records = [
+        r
+        for r in caplog.records
+        if any(
+            flag in r.message
+            for flag in ("--force-resubmit", "--state-file", "--session-file", "--no-headless")
+        )
+    ]
     assert deferred_records == []
 
 
@@ -415,8 +451,10 @@ def test_log_deferred_flags_silent_when_defaults(caplog) -> None:
 # JSON encoder
 # --------------------------------------------------------------------------- #
 
+
 def test_json_encoder_decimal() -> None:
     from decimal import Decimal
+
     result = json.dumps({"v": Decimal("50.00")}, cls=_JSONEncoder)
     assert json.loads(result) == {"v": "50.00"}
 
@@ -430,11 +468,22 @@ def test_json_encoder_date() -> None:
 # Entry-point smoke test
 # --------------------------------------------------------------------------- #
 
+
 def test_python_m_gwwc_import_dry_run_exits_zero() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "gwwc_import",
-         "--input", str(FIXTURE), "--source", "finanzguru",
-         "--mode", "dry-run", "--log-level", "WARNING"],
+        [
+            sys.executable,
+            "-m",
+            "gwwc_import",
+            "--input",
+            str(FIXTURE),
+            "--source",
+            "finanzguru",
+            "--mode",
+            "dry-run",
+            "--log-level",
+            "WARNING",
+        ],
         capture_output=True,
         text=True,
     )
@@ -446,9 +495,17 @@ def test_python_m_gwwc_import_dry_run_exits_zero() -> None:
 
 def test_python_m_gwwc_import_live_mode_exits_one() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "gwwc_import",
-         "--input", str(FIXTURE), "--source", "finanzguru",
-         "--mode", "live"],
+        [
+            sys.executable,
+            "-m",
+            "gwwc_import",
+            "--input",
+            str(FIXTURE),
+            "--source",
+            "finanzguru",
+            "--mode",
+            "live",
+        ],
         capture_output=True,
         text=True,
     )
@@ -459,8 +516,15 @@ def test_python_m_gwwc_import_live_mode_exits_one() -> None:
 
 def test_python_m_gwwc_import_invalid_args_exits_two() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "gwwc_import",
-         "--input", str(FIXTURE), "--source", "not-a-real-source"],
+        [
+            sys.executable,
+            "-m",
+            "gwwc_import",
+            "--input",
+            str(FIXTURE),
+            "--source",
+            "not-a-real-source",
+        ],
         capture_output=True,
         text=True,
     )
