@@ -257,7 +257,7 @@ def _build_source(source_key: str) -> DonationSource:
 def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.Logger) -> None:
     from gwwc_import.automation.session import GWWCSession, SessionError
     from gwwc_import.automation.state import SubmissionState
-    from gwwc_import.automation.submitter import DonationSubmitter
+    from gwwc_import.automation.submitter import DonationSubmitter, SubmissionResult
 
     state = SubmissionState(Path(args.state_file))
     to_submit = state.filter_new(donations, force=args.force_resubmit)
@@ -278,6 +278,7 @@ def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.
     if not email or not password:
         raise SessionError("GWWC_EMAIL and GWWC_PASSWORD must be set (e.g. in a .env file).")
 
+    results: list[SubmissionResult] = []
     with GWWCSession(
         email=email,
         password=password,
@@ -286,10 +287,10 @@ def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.
     ) as session:
         session.ensure_logged_in()
         submitter = DonationSubmitter(session.get_page(), dry_run=False)
-        results = submitter.submit_all(to_submit)
-
-    for result in results:
-        state.record(result)
+        for donation in to_submit:
+            result = submitter.submit(donation)
+            state.record(result)
+            results.append(result)
 
     failed = [r for r in results if not r.success]
     if failed:

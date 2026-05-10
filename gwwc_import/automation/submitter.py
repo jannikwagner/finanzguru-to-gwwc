@@ -198,11 +198,11 @@ class DonationSubmitter:
             raise FormStructureError(f"Currency dropdown did not open for {currency!r}.") from exc
 
         options = listbox.get_by_role("option").all()
-        cu = currency.upper()
+        cu = re.escape(currency.upper())
         for option in options:
             text = option.inner_text().strip().upper()
-            # Match "EUR", "EUR - Euro", "EUR (Euro)", etc.
-            if text == cu or text.startswith(cu + " ") or text.startswith(cu + "("):
+            # Match "EUR", "EUR - Euro", "EUR (Euro)", "EUR\tEuro", etc.
+            if re.match(rf"^{cu}(\W|$)", text):
                 option.click()
                 return
 

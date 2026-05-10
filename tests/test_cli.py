@@ -456,15 +456,19 @@ def test_run_live_mode_submits_and_records(monkeypatch, tmp_path) -> None:
     mock_session.get_page.return_value = mock_page
 
     mock_submitter = MagicMock()
-    mock_submitter.submit_all.return_value = mock_results
+    # submit() is called per-donation (not submit_all) so side_effect iterates results.
+    mock_submitter.submit.side_effect = mock_results
 
+    # Patch targets are the source modules, not gwwc_import.cli, because _run_live
+    # uses deferred imports — the names are resolved from the source module at call
+    # time, so patching the source module is what takes effect.
     with (
         patch("gwwc_import.automation.session.GWWCSession", return_value=mock_session),
         patch("gwwc_import.automation.submitter.DonationSubmitter", return_value=mock_submitter),
     ):
         donations = run(_make_args(mode="live", state_file=str(state_file)))
 
-    mock_submitter.submit_all.assert_called_once()
+    assert mock_submitter.submit.call_count == len(all_donations)
     assert len(donations) == len(all_donations)
 
     reloaded = SubmissionState(state_file)
