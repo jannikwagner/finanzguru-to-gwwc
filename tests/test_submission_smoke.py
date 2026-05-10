@@ -1,4 +1,4 @@
-"""Smoke tests for the Playwright login and session flow.
+"""Smoke tests for the Playwright login, session, and form-submission flows.
 
 These tests require live GWWC credentials and a network connection.
 They are skipped automatically in CI unless GWWC_EMAIL is set.
@@ -9,11 +9,15 @@ Run locally with credentials in .env:
 
 import json
 import os
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from dotenv import load_dotenv
 
 from gwwc_import.automation.session import GWWCSession, SessionError
+from gwwc_import.automation.submitter import DonationSubmitter
+from gwwc_import.models import Donation
 
 load_dotenv()
 
@@ -34,6 +38,11 @@ def session(tmp_path):
     )
     with sess:
         yield sess
+
+
+# ---------------------------------------------------------------------------
+# Session / login tests
+# ---------------------------------------------------------------------------
 
 
 def test_login_reaches_dashboard(session):
@@ -97,3 +106,67 @@ def test_from_env_raises_without_credentials(monkeypatch):
     monkeypatch.delenv("GWWC_PASSWORD", raising=False)
     with pytest.raises(SessionError, match="GWWC_EMAIL"):
         GWWCSession.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Submission tests
+# ---------------------------------------------------------------------------
+
+_SAMPLE_DONATION = Donation(
+    source_system="test",
+    source_id="smoke-001",
+    date=date(2024, 12, 25),
+    amount=Decimal("10.00"),
+    currency="EUR",
+    recipient_name="Against Malaria Foundation",
+    is_recurring=False,
+)
+
+_SAMPLE_RECURRING_DONATION = Donation(
+    source_system="test",
+    source_id="smoke-002",
+    date=date(2024, 11, 1),
+    amount=Decimal("25.00"),
+    currency="EUR",
+    recipient_name="GiveDirectly",
+    is_recurring=True,
+)
+
+
+def test_dry_run_one_time_donation(session):
+    """Dry-run: form is filled and cancelled; no donation is created."""
+    session.ensure_logged_in()
+    submitter = DonationSubmitter(session.get_page(), dry_run=True)
+    result = submitter.submit(_SAMPLE_DONATION)
+    assert result.success
+    assert result.dry_run
+    assert result.error is None
+
+
+def test_dry_run_recurring_donation(session):
+    """Dry-run with a recurring donation selects the Recurring radio."""
+    session.ensure_logged_in()
+    submitter = DonationSubmitter(session.get_page(), dry_run=True)
+    result = submitter.submit(_SAMPLE_RECURRING_DONATION)
+    assert result.success
+    assert result.dry_run
+    assert result.error is None
+
+
+def test_dry_run_unknown_org(session):
+    """Dry-run with an unknown org name falls back to the 'Create' option."""
+    session.ensure_logged_in()
+    submitter = DonationSubmitter(session.get_page(), dry_run=True)
+    donation = Donation(
+        source_system="test",
+        source_id="smoke-003",
+        date=date(2024, 6, 1),
+        amount=Decimal("5.00"),
+        currency="EUR",
+        recipient_name="Unbekannte Hilfsorganisation e.V.",
+        is_recurring=False,
+    )
+    result = submitter.submit(donation)
+    assert result.success
+    assert result.dry_run
+    assert result.error is None
