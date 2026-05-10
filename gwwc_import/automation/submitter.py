@@ -193,16 +193,23 @@ class DonationSubmitter:
         listbox = self.page.get_by_role("listbox")
         try:
             listbox.wait_for(state="visible", timeout=5_000)
+            listbox.get_by_role("option").first.wait_for(state="visible", timeout=5_000)
         except PlaywrightTimeoutError as exc:
             raise FormStructureError(f"Currency dropdown did not open for {currency!r}.") from exc
 
         options = listbox.get_by_role("option").all()
+        cu = currency.upper()
         for option in options:
-            if option.inner_text().strip().upper() == currency.upper():
+            text = option.inner_text().strip().upper()
+            # Match "EUR", "EUR - Euro", "EUR (Euro)", etc.
+            if text == cu or text.startswith(cu + " ") or text.startswith(cu + "("):
                 option.click()
                 return
 
-        raise FormStructureError(f"No exact currency match found for {currency!r}.")
+        raise FormStructureError(
+            f"No currency match found for {currency!r}. "
+            f"Available: {[o.inner_text().strip() for o in options]}"
+        )
 
     def _fill_amount(self, dialog: Locator, amount: Decimal) -> None:
         self.page.get_by_role("textbox", name="Amount").fill(str(amount))

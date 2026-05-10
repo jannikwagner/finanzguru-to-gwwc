@@ -1,4 +1,4 @@
-"""Unit and integration tests for the CLI layer (Phase 2)."""
+"""Unit and integration tests for the CLI layer."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import json
 import subprocess
 import sys
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,7 +19,6 @@ from gwwc_import.cli import (
     _build_arg_parser,
     _build_source,
     _JSONEncoder,
-    _log_deferred_flags,
     _parse_date_arg,
     run,
 )
@@ -34,21 +35,21 @@ FIXTURE = Path(__file__).parent / "fixtures" / "finanzguru_dummy.csv"
 
 def _make_args(**overrides) -> argparse.Namespace:
     """Return a minimal valid Namespace, with optional field overrides."""
-    defaults = dict(
-        input=str(FIXTURE),
-        source="finanzguru",
-        mode="dry-run",
-        headless=True,
-        limit=None,
-        from_date=None,
-        to_date=None,
-        only_recurring=False,
-        only_onetime=False,
-        force_resubmit=False,
-        state_file="~/.gwwc_import_state.json",
-        session_file="~/.gwwc_import_session.json",
-        log_level="WARNING",
-    )
+    defaults = {
+        "input": str(FIXTURE),
+        "source": "finanzguru",
+        "mode": "dry-run",
+        "headless": True,
+        "limit": None,
+        "from_date": None,
+        "to_date": None,
+        "only_recurring": False,
+        "only_onetime": False,
+        "force_resubmit": False,
+        "state_file": "~/.gwwc_import_state.json",
+        "session_file": "~/.gwwc_import_session.json",
+        "log_level": "WARNING",
+    }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
 
@@ -402,49 +403,73 @@ def test_run_dryrun_with_only_onetime(capsys) -> None:
     assert all(not d.is_recurring for d in donations)
 
 
-def test_run_live_mode_raises_not_implemented() -> None:
-    with pytest.raises(NotImplementedError, match="Phase 3/4"):
-        run(_make_args(mode="live"))
+def test_run_live_mode_missing_credentials_raises(monkeypatch, tmp_path) -> None:
+    """live mode raises SessionError when GWWC credentials are absent."""
+    monkeypatch.delenv("GWWC_EMAIL", raising=False)
+    monkeypatch.delenv("GWWC_PASSWORD", raising=False)
+    from gwwc_import.automation.session import SessionError
+
+    with pytest.raises(SessionError, match="GWWC_EMAIL"):
+        run(_make_args(mode="live", state_file=str(tmp_path / "state.json")))
 
 
-# --------------------------------------------------------------------------- #
-# Deferred-flag debug logging
-# --------------------------------------------------------------------------- #
+def test_run_live_mode_skips_already_submitted(monkeypatch, tmp_path) -> None:
+    """Already-submitted donations are filtered before any session is created."""
+    monkeypatch.setenv("GWWC_EMAIL", "test@example.com")
+    monkeypatch.setenv("GWWC_PASSWORD", "test-pass")
+
+    from gwwc_import.automation.state import SubmissionState
+    from gwwc_import.automation.submitter import SubmissionResult
+    from gwwc_import.data_sources.finanzguru import FinanzguruSource
+
+    state_file = tmp_path / "state.json"
+    all_donations = FinanzguruSource().load_donations(FIXTURE)
+    state = SubmissionState(state_file)
+    for d in all_donations:
+        state.record(SubmissionResult(donation=d, dry_run=False, success=True))
+
+    with patch("gwwc_import.automation.session.GWWCSession") as mock_cls:
+        run(_make_args(mode="live", state_file=str(state_file)))
+
+    mock_cls.assert_not_called()
 
 
-def test_log_deferred_flags_force_resubmit(caplog) -> None:
-    import logging
+def test_run_live_mode_submits_and_records(monkeypatch, tmp_path) -> None:
+    """New donations are passed to DonationSubmitter and results written to state."""
+    monkeypatch.setenv("GWWC_EMAIL", "test@example.com")
+    monkeypatch.setenv("GWWC_PASSWORD", "test-pass")
 
-    log = logging.getLogger("test")
-    with caplog.at_level(logging.DEBUG, logger="test"):
-        _log_deferred_flags(_make_args(force_resubmit=True), log)
-    assert any("--force-resubmit" in r.message for r in caplog.records)
+    from gwwc_import.automation.state import SubmissionState
+    from gwwc_import.automation.submitter import SubmissionResult
+    from gwwc_import.data_sources.finanzguru import FinanzguruSource
 
-
-def test_log_deferred_flags_custom_state_file(caplog) -> None:
-    import logging
-
-    log = logging.getLogger("test")
-    with caplog.at_level(logging.DEBUG, logger="test"):
-        _log_deferred_flags(_make_args(state_file="/tmp/custom.json"), log)
-    assert any("--state-file" in r.message for r in caplog.records)
-
-
-def test_log_deferred_flags_silent_when_defaults(caplog) -> None:
-    import logging
-
-    log = logging.getLogger("test")
-    with caplog.at_level(logging.DEBUG, logger="test"):
-        _log_deferred_flags(_make_args(), log)
-    deferred_records = [
-        r
-        for r in caplog.records
-        if any(
-            flag in r.message
-            for flag in ("--force-resubmit", "--state-file", "--session-file", "--no-headless")
-        )
+    state_file = tmp_path / "state.json"
+    all_donations = FinanzguruSource().load_donations(FIXTURE)
+    mock_results = [
+        SubmissionResult(donation=d, dry_run=False, success=True) for d in all_donations
     ]
-    assert deferred_records == []
+
+    mock_page = MagicMock()
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=None)
+    mock_session.get_page.return_value = mock_page
+
+    mock_submitter = MagicMock()
+    mock_submitter.submit_all.return_value = mock_results
+
+    with (
+        patch("gwwc_import.automation.session.GWWCSession", return_value=mock_session),
+        patch("gwwc_import.automation.submitter.DonationSubmitter", return_value=mock_submitter),
+    ):
+        donations = run(_make_args(mode="live", state_file=str(state_file)))
+
+    mock_submitter.submit_all.assert_called_once()
+    assert len(donations) == len(all_donations)
+
+    reloaded = SubmissionState(state_file)
+    for d in all_donations:
+        assert reloaded.already_submitted(d.source_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -453,7 +478,6 @@ def test_log_deferred_flags_silent_when_defaults(caplog) -> None:
 
 
 def test_json_encoder_decimal() -> None:
-    from decimal import Decimal
 
     result = json.dumps({"v": Decimal("50.00")}, cls=_JSONEncoder)
     assert json.loads(result) == {"v": "50.00"}
@@ -508,10 +532,13 @@ def test_python_m_gwwc_import_live_mode_exits_one() -> None:
         ],
         capture_output=True,
         text=True,
+        # Set credentials to empty strings so load_dotenv() in main() cannot
+        # override them (load_dotenv does not overwrite existing env vars).
+        env={**__import__("os").environ, "GWWC_EMAIL": "", "GWWC_PASSWORD": ""},
     )
     # Exit code 1 (general error), not 2 (argparse usage error).
     assert result.returncode == 1
-    assert "Phase 3/4" in result.stderr
+    assert "GWWC_EMAIL" in result.stderr
 
 
 def test_python_m_gwwc_import_invalid_args_exits_two() -> None:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import date, datetime
 from decimal import Decimal
@@ -67,7 +68,6 @@ def run(args: argparse.Namespace) -> list[Donation]:
     Returns the list of donations that were (or would be) processed.
     """
     log = logging.getLogger(__name__)
-    _log_deferred_flags(args, log)
 
     from_date = _parse_date_arg(args.from_date, "--from-date")
     to_date = _parse_date_arg(args.to_date, "--to-date")
@@ -89,10 +89,7 @@ def run(args: argparse.Namespace) -> list[Donation]:
     if args.mode == "dry-run":
         _dry_run_output(donations, log)
     elif args.mode == "live":
-        raise NotImplementedError(
-            "Live submission mode requires Playwright automation (Phase 3/4). "
-            "Use --mode dry-run to preview what would be submitted."
-        )
+        _run_live(args, donations, log)
 
     return donations
 
@@ -257,16 +254,52 @@ def _build_source(source_key: str) -> DonationSource:
     return cls.from_env()
 
 
-def _log_deferred_flags(args: argparse.Namespace, log: logging.Logger) -> None:
-    """Emit a DEBUG line per accepted-but-not-yet-active flag."""
-    if args.force_resubmit:
-        log.debug("--force-resubmit accepted but not active yet (Phase 5).")
-    if args.state_file != _DEFAULT_STATE_FILE:
-        log.debug("--state-file accepted but not active yet (Phase 5).")
-    if args.session_file != _DEFAULT_SESSION_FILE:
-        log.debug("--session-file accepted but not active yet (Phase 3).")
-    if args.headless is False:
-        log.debug("--no-headless accepted but not active yet (Phase 3).")
+def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.Logger) -> None:
+    from gwwc_import.automation.session import GWWCSession, SessionError
+    from gwwc_import.automation.state import SubmissionState
+    from gwwc_import.automation.submitter import DonationSubmitter
+
+    state = SubmissionState(Path(args.state_file))
+    to_submit = state.filter_new(donations, force=args.force_resubmit)
+
+    skipped = len(donations) - len(to_submit)
+    if skipped:
+        log.info(
+            "Skipping %d already-submitted donation(s) (use --force-resubmit to override).",
+            skipped,
+        )
+
+    if not to_submit:
+        log.info("Nothing new to submit.")
+        return
+
+    email = os.environ.get("GWWC_EMAIL", "")
+    password = os.environ.get("GWWC_PASSWORD", "")
+    if not email or not password:
+        raise SessionError("GWWC_EMAIL and GWWC_PASSWORD must be set (e.g. in a .env file).")
+
+    with GWWCSession(
+        email=email,
+        password=password,
+        session_file=Path(args.session_file),
+        headless=args.headless,
+    ) as session:
+        session.ensure_logged_in()
+        submitter = DonationSubmitter(session.get_page(), dry_run=False)
+        results = submitter.submit_all(to_submit)
+
+    for result in results:
+        state.record(result)
+
+    failed = [r for r in results if not r.success]
+    if failed:
+        log.error(
+            "%d/%d submission(s) failed. See above for details.",
+            len(failed),
+            len(results),
+        )
+    else:
+        log.info("All %d donation(s) submitted successfully.", len(results))
 
 
 def _parse_date_arg(value: str | None, flag: str) -> date | None:
