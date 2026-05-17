@@ -165,6 +165,68 @@ def test_state_file_in_nonexistent_parent_is_created(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Atomic write + corruption recovery
+# ---------------------------------------------------------------------------
+
+
+def test_save_is_atomic_no_partial_file_visible(tmp_path: Path) -> None:
+    """A successful save must never leave a `.tmp` sibling behind."""
+    state_file = tmp_path / "state.json"
+    state = SubmissionState(state_file)
+    state.record(_live_success(_make_donation()))
+    siblings = list(tmp_path.iterdir())
+    assert state_file in siblings
+    assert not any(p.name.endswith(".tmp") for p in siblings)
+
+
+def test_corrupted_state_file_is_backed_up_and_reset(tmp_path: Path, caplog) -> None:
+    """Invalid JSON on load is moved aside; the new state starts empty."""
+    import logging
+
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{this is not valid json")
+
+    with caplog.at_level(logging.WARNING, logger="gwwc_import.automation.state"):
+        state = SubmissionState(state_file)
+
+    # Original file moved aside.
+    backups = list(tmp_path.glob("state.json.corrupted-*"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == "{this is not valid json"
+    # New state is empty and usable.
+    assert state._records == []
+    assert not state.already_submitted("anything")
+    # The CLI user gets a clear warning.
+    assert any("Moved to" in r.message for r in caplog.records)
+
+
+def test_schema_invalid_state_file_is_backed_up(tmp_path: Path) -> None:
+    """Valid JSON that fails Pydantic validation is also treated as corrupted."""
+    state_file = tmp_path / "state.json"
+    # Valid JSON, but the record shape is wrong (missing required fields).
+    state_file.write_text('[{"oops": "not a SubmissionRecord"}]')
+
+    state = SubmissionState(state_file)
+    backups = list(tmp_path.glob("state.json.corrupted-*"))
+    assert len(backups) == 1
+    assert state._records == []
+
+
+def test_filter_new_uses_set_lookup_not_scan(tmp_path: Path) -> None:
+    """filter_new should be O(n+m), not O(n*m). Smoke-test via large input."""
+    state_file = tmp_path / "state.json"
+    state = SubmissionState(state_file)
+    for i in range(500):
+        state.record(_live_success(_make_donation(f"id-{i}")))
+
+    candidates = [_make_donation(f"id-{i}") for i in range(1000)]
+    fresh = state.filter_new(candidates)
+    # First 500 already submitted; 500..999 are new.
+    assert len(fresh) == 500
+    assert all(d.source_id.startswith("id-") for d in fresh)
+
+
+# ---------------------------------------------------------------------------
 # SubmissionRecord model
 # ---------------------------------------------------------------------------
 

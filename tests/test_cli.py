@@ -476,6 +476,72 @@ def test_run_live_mode_submits_and_records(monkeypatch, tmp_path) -> None:
         assert reloaded.already_submitted(d.source_id)
 
 
+def test_run_live_records_failure_when_submit_raises(monkeypatch, tmp_path, caplog) -> None:
+    """A submitter exception on one donation must not abort the batch.
+
+    The failing donation is recorded as success=False with the exception
+    detail, subsequent donations are still attempted, and _run_live raises
+    RuntimeError so the CLI exits non-zero.
+    """
+    import logging
+
+    monkeypatch.setenv("GWWC_EMAIL", "test@example.com")
+    monkeypatch.setenv("GWWC_PASSWORD", "test-pass")
+
+    from gwwc_import.automation.state import SubmissionState
+    from gwwc_import.automation.submitter import SubmissionResult
+    from gwwc_import.data_sources.finanzguru import FinanzguruSource
+
+    state_file = tmp_path / "state.json"
+    all_donations = FinanzguruSource().load_donations(FIXTURE)
+
+    # The second donation raises; the first and third+ succeed.
+    failing_idx = 1
+    side_effect = []
+    for i, d in enumerate(all_donations):
+        if i == failing_idx:
+            side_effect.append(RuntimeError("simulated form failure"))
+        else:
+            side_effect.append(SubmissionResult(donation=d, dry_run=False, success=True))
+
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=None)
+    mock_session.get_page.return_value = MagicMock()
+
+    mock_submitter = MagicMock()
+    mock_submitter.submit.side_effect = side_effect
+
+    with (
+        patch("gwwc_import.automation.session.GWWCSession", return_value=mock_session),
+        patch("gwwc_import.automation.submitter.DonationSubmitter", return_value=mock_submitter),
+        caplog.at_level(logging.ERROR, logger="gwwc_import.cli"),
+        pytest.raises(RuntimeError, match=r"1/\d+ submission\(s\) failed"),
+    ):
+        run(_make_args(mode="live", state_file=str(state_file)))
+
+    # All donations were attempted, not just up to the failing one.
+    assert mock_submitter.submit.call_count == len(all_donations)
+
+    # State file records the failure with the captured error text.
+    reloaded = SubmissionState(state_file)
+    failed_record = next(
+        r for r in reloaded._records if r.source_id == all_donations[failing_idx].source_id
+    )
+    assert failed_record.success is False
+    assert "simulated form failure" in (failed_record.error or "")
+
+    # B3: ERROR-level log line must reference the donation only via redacted_label
+    # (short_id + date), not the raw payee or amount.
+    error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert error_records, "expected at least one ERROR log line"
+    failing_donation = all_donations[failing_idx]
+    for rec in error_records:
+        msg = rec.getMessage()
+        assert failing_donation.recipient_name not in msg
+        assert str(failing_donation.amount) not in msg
+
+
 # --------------------------------------------------------------------------- #
 # JSON encoder
 # --------------------------------------------------------------------------- #

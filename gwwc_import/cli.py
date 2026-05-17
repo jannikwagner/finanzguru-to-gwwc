@@ -273,6 +273,8 @@ def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.
         log.info("Nothing new to submit.")
         return
 
+    log.info("Submitting %d new donation(s).", len(to_submit))
+
     email = os.environ.get("GWWC_EMAIL", "")
     password = os.environ.get("GWWC_PASSWORD", "")
     if not email or not password:
@@ -288,19 +290,34 @@ def _run_live(args: argparse.Namespace, donations: list[Donation], log: logging.
         session.ensure_logged_in()
         submitter = DonationSubmitter(session.get_page(), dry_run=False)
         for donation in to_submit:
-            result = submitter.submit(donation)
+            # B1: a submitter exception (FormStructureError, PlaywrightTimeout,
+            # network blip) must not abort the rest of the batch nor leave the
+            # state silent about the failing donation. Record a failure result
+            # and continue.
+            try:
+                result = submitter.submit(donation)
+            except Exception as exc:
+                result = SubmissionResult(
+                    donation=donation,
+                    dry_run=False,
+                    success=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                # B3: at non-DEBUG levels, reference donations only by their
+                # short_id (privacy rule). Full exception detail only at DEBUG.
+                log.error("Submission failed for %s.", redacted_label(donation))
+                log.debug("Full error for %s: %s", redacted_label(donation), exc)
             state.record(result)
             results.append(result)
 
     failed = [r for r in results if not r.success]
     if failed:
-        log.error(
-            "%d/%d submission(s) failed. See above for details.",
-            len(failed),
-            len(results),
+        # S2: surface partial failure to the caller (cron/CI) via non-zero exit.
+        raise RuntimeError(
+            f"{len(failed)}/{len(results)} submission(s) failed. "
+            "See log output above and the state file for details."
         )
-    else:
-        log.info("All %d donation(s) submitted successfully.", len(results))
+    log.info("All %d donation(s) submitted successfully.", len(results))
 
 
 def _parse_date_arg(value: str | None, flag: str) -> date | None:
